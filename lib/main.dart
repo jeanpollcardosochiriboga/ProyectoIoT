@@ -2,6 +2,85 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+// ============================================================================
+// SERVICIO DE NOTIFICACIONES LOCALES
+// ============================================================================
+class NotificationService {
+  static final FlutterLocalNotificationsPlugin _notifications =
+      FlutterLocalNotificationsPlugin();
+
+  static Future<void> initialize() async {
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const initSettings = InitializationSettings(android: androidSettings);
+    
+    await _notifications.initialize(initSettings);
+    
+    // Solicitar permisos en Android 13+
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestNotificationsPermission();
+  }
+
+  static Future<void> showNotification({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
+    const androidDetails = AndroidNotificationDetails(
+      'smart_feeder_channel',
+      'Smart Feeder Alertas',
+      channelDescription: 'Notificaciones del dispensador inteligente',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+      playSound: true,
+      enableVibration: true,
+    );
+
+    const details = NotificationDetails(android: androidDetails);
+
+    await _notifications.show(id, title, body, details, payload: payload);
+  }
+
+  // Notificaciones predefinidas
+  static void notifyMascotaDetectada(String animal, double confianza) {
+    final emoji = animal == 'perro' ? '🐕' : '🐈';
+    showNotification(
+      id: 1,
+      title: '$emoji ¡${animal.toUpperCase()} Detectado!',
+      body: 'Se ha detectado un $animal con ${confianza.toStringAsFixed(0)}% de confianza',
+    );
+  }
+
+  static void notifyComidaDispensada(String animal) {
+    final emoji = animal == 'perro' ? '🐕' : '🐈';
+    showNotification(
+      id: 2,
+      title: '$emoji Comida Dispensada',
+      body: 'Se ha dispensado comida para $animal correctamente',
+    );
+  }
+
+  static void notifyPocaLuz() {
+    showNotification(
+      id: 3,
+      title: '💡 Prendiendo Iluminación',
+      body: 'Se detectó poca luz, activando focos automáticamente',
+    );
+  }
+
+  static void notifyAlertaHumedad() {
+    showNotification(
+      id: 4,
+      title: '⚠️ Alerta de Humedad',
+      body: 'Se detectó humedad alta en el dispensador',
+    );
+  }
+}
 
 // ============================================================================
 // CONFIGURACIÓN THINGER.IO - LLENAR CON TUS CREDENCIALES
@@ -9,7 +88,20 @@ import 'package:http/http.dart' as http;
 class ThingerConfig {
   static const String THINGER_USER = 'jeanpoll';
   static const String DEVICE_ID = 'dispensador01';
-  static const String ACCESS_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkZXYiOiJkaXNwZW5zYWRvcjAxIiwiaWF0IjoxNzY5MzExNDYxLCJqdGkiOiI2OTc1OGNlNTI4M2JhMDljNTYwOTY4NzUiLCJzdnIiOiJ1cy1lYXN0LmF3cy50aGluZ2VyLmlvIiwidXNyIjoiamVhbnBvbGwifQ.FiDQ3E7HT2zvkTm06apM12qya7jBs9V330KPpYwTLKU';
+  static const String ACCESS_TOKEN =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkZXYiOiJkaXNwZW5zYWRvcjAxIiwiaWF0IjoxNzY5MzExNDYxLCJqdGkiOiI2OTc1OGNlNTI4M2JhMDljNTYwOTY4NzUiLCJzdnIiOiJ1cy1lYXN0LmF3cy50aGluZ2VyLmlvIiwidXNyIjoiamVhbnBvbGwifQ.FiDQ3E7HT2zvkTm06apM12qya7jBs9V330KPpYwTLKU';
+
+  // Configuración de Cámara IoT
+  static const String CAMERA_DEVICE_ID = 'camara01';
+  static const String CAMERA_TOKEN =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkZXYiOiJjYW1hcmEwMSIsImlhdCI6MTc2OTU0Mzk4MCwianRpIjoiNjk3OTE5MmMyODNiYTA5YzU2MGEwNjFmIiwic3ZyIjoidXMtZWFzdC5hd3MudGhpbmdlci5pbyIsInVzciI6ImplYW5wb2xsIn0.bBB6lHJrOXpljDWGjBqBAA0NlHoi5WUZhtUgjP6Po1c';
+
+  // Token del Proyecto (para Buckets y todos los dispositivos)
+  static const String THINGER_TOKEN =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJ0b2tlbl9wcm95ZWN0byIsInN2ciI6InVzLWVhc3QuYXdzLnRoaW5nZXIuaW8iLCJ1c3IiOiJqZWFucG9sbCJ9.teRg_U70rmGta9v9Q8dlLOaztxT0PSrVdREwc4r0Nkk';
+
+  // Configuración del Data Bucket de Fotos
+  static const String BUCKET_ID = 'fotos_mascotas';
 
   static String get readUrl =>
       'https://api.thinger.io/v2/users/$THINGER_USER/devices/$DEVICE_ID/datos_generales';
@@ -17,10 +109,26 @@ class ThingerConfig {
   static String get writeUrl =>
       'https://api.thinger.io/v2/users/$THINGER_USER/devices/$DEVICE_ID/control_motor';
 
+  static String cameraUrl(int timestamp) =>
+      'https://api.thinger.io/v2/users/$THINGER_USER/devices/$CAMERA_DEVICE_ID/foto?t=$timestamp';
+
+  // URL del Data Bucket para obtener las fotos
+  static String get bucketUrl =>
+      'https://api.thinger.io/v2/users/$THINGER_USER/buckets/$BUCKET_ID/data?items=10&sort=desc';
+
   static Map<String, String> get headers => {
-        'Authorization': 'Bearer $ACCESS_TOKEN',
-        'Content-Type': 'application/json',
-      };
+    'Authorization': 'Bearer $ACCESS_TOKEN',
+    'Content-Type': 'application/json',
+  };
+
+  static Map<String, String> get cameraHeaders => {
+    'Authorization': 'Bearer $CAMERA_TOKEN',
+  };
+
+  static Map<String, String> get bucketHeaders => {
+    'Authorization': 'Bearer $THINGER_TOKEN',
+    'Content-Type': 'application/json',
+  };
 }
 
 // ============================================================================
@@ -59,9 +167,40 @@ class SensorData {
 }
 
 // ============================================================================
+// MODELO DE FOTOS DEL BUCKET
+// ============================================================================
+class FotoMascota {
+  final DateTime fecha;
+  final String animal;
+  final int confianza;
+  final String imagenBase64;
+
+  FotoMascota({
+    required this.fecha,
+    required this.animal,
+    required this.confianza,
+    required this.imagenBase64,
+  });
+
+  factory FotoMascota.fromJson(Map<String, dynamic> json) {
+    // El bucket puede devolver los datos directamente o dentro de 'val'
+    final data = json['val'] ?? json;
+    
+    return FotoMascota(
+      fecha: DateTime.fromMillisecondsSinceEpoch(json['ts'] ?? 0),
+      animal: data['animal']?.toString() ?? 'desconocido',
+      confianza: (data['confianza'] ?? 0).toInt(),
+      imagenBase64: data['imagen']?.toString() ?? '',
+    );
+  }
+}
+
+// ============================================================================
 // MAIN
 // ============================================================================
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.initialize();
   runApp(const SmartFeederApp());
 }
 
@@ -119,7 +258,20 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool _isLoadingPerro = false;
   bool _isLoadingGato = false;
   Timer? _dataTimer;
+  Timer? _cameraTimer;
+  int _cameraTimestamp = DateTime.now().millisecondsSinceEpoch;
   late AnimationController _gearAnimationController;
+
+  // Lista de fotos del bucket
+  List<FotoMascota> _fotos = [];
+  bool _isLoadingFotos = false;
+
+  // Control de notificaciones (para no repetir)
+  bool _notifiedPocaLuz = false;
+  bool _notifiedHumedad = false;
+  bool _notifiedMascota = false;
+  String _lastFotoId = '';  // Para detectar nuevas fotos
+  Timer? _fotosTimer;  // Timer para verificar nuevas fotos
 
   @override
   void initState() {
@@ -131,12 +283,31 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     // Iniciar timer para leer datos cada 2 segundos
     _fetchData();
-    _dataTimer = Timer.periodic(const Duration(seconds: 2), (_) => _fetchData());
+    _dataTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _fetchData(),
+    );
+
+    // Timer para actualizar la cámara cada 3 segundos
+    _cameraTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      setState(() {
+        _cameraTimestamp = DateTime.now().millisecondsSinceEpoch;
+      });
+    });
+
+    // Cargar fotos del bucket al inicio y cada 15 segundos
+    _fetchFotos();
+    _fotosTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _fetchFotos(),
+    );
   }
 
   @override
   void dispose() {
     _dataTimer?.cancel();
+    _cameraTimer?.cancel();
+    _fotosTimer?.cancel();
     _gearAnimationController.dispose();
     super.dispose();
   }
@@ -147,16 +318,18 @@ class _DashboardScreenState extends State<DashboardScreen>
   Future<void> _fetchData() async {
     try {
       final response = await http
-          .get(
-            Uri.parse(ThingerConfig.readUrl),
-            headers: ThingerConfig.headers,
-          )
+          .get(Uri.parse(ThingerConfig.readUrl), headers: ThingerConfig.headers)
           .timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         final jsonData = json.decode(response.body);
+        final newData = SensorData.fromJson(jsonData);
+        
+        // Verificar alertas para notificaciones
+        _checkAlerts(newData);
+        
         setState(() {
-          _sensorData = SensorData.fromJson(jsonData);
+          _sensorData = newData;
           _isOnline = true;
         });
       } else {
@@ -169,7 +342,98 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   // ---------------------------------------------------------------------------
-  // ENVÍO DE COMANDOS (POST)
+  // VERIFICAR ALERTAS Y ENVIAR NOTIFICACIONES
+  // ---------------------------------------------------------------------------
+  void _checkAlerts(SensorData newData) {
+    // Alerta de poca luz (menos de 100 lux)
+    if (newData.nivelLuz < 100 && !_notifiedPocaLuz) {
+      NotificationService.notifyPocaLuz();
+      _notifiedPocaLuz = true;
+    } else if (newData.nivelLuz >= 100) {
+      _notifiedPocaLuz = false;  // Resetear cuando hay luz
+    }
+
+    // Alerta de humedad alta
+    if (newData.alertaHumedad && !_notifiedHumedad) {
+      NotificationService.notifyAlertaHumedad();
+      _notifiedHumedad = true;
+    } else if (!newData.alertaHumedad) {
+      _notifiedHumedad = false;  // Resetear cuando baja la humedad
+    }
+
+    // Alerta de mascota detectada
+    if (newData.mascotaDetectada && !_notifiedMascota) {
+      // Se mostrará cuando llegue la foto al bucket con el tipo de animal
+      _notifiedMascota = true;
+    } else if (!newData.mascotaDetectada) {
+      _notifiedMascota = false;  // Resetear cuando no hay mascota
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // LECTURA DE FOTOS DEL BUCKET (GET)
+  // ---------------------------------------------------------------------------
+  Future<void> _fetchFotos() async {
+    setState(() => _isLoadingFotos = true);
+
+    try {
+      final response = await http
+          .get(
+            Uri.parse(ThingerConfig.bucketUrl),
+            headers: ThingerConfig.bucketHeaders,
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final dynamic responseData = json.decode(response.body);
+        
+        // El bucket puede devolver los datos en diferentes formatos:
+        // 1. Array directo: [{...}, {...}]
+        // 2. Objeto con "value": {"value": [{...}], "Count": n}
+        List<dynamic> jsonData;
+        if (responseData is List) {
+          jsonData = responseData;
+        } else if (responseData is Map && responseData['value'] != null) {
+          jsonData = responseData['value'] as List<dynamic>;
+        } else {
+          jsonData = [];
+        }
+        
+        // Convertir a lista de FotoMascota
+        final newFotos = jsonData.map((item) => FotoMascota.fromJson(item)).toList();
+        
+        // Verificar si hay una nueva foto y notificar
+        if (newFotos.isNotEmpty) {
+          final newestFotoId = '${newFotos.first.fecha}_${newFotos.first.animal}';
+          if (_lastFotoId.isNotEmpty && newestFotoId != _lastFotoId) {
+            // Nueva foto detectada - enviar notificación
+            final foto = newFotos.first;
+            if (foto.animal != 'ninguno') {
+              NotificationService.notifyMascotaDetectada(
+                foto.animal,
+                foto.confianza.toDouble(),
+              );
+            }
+          }
+          _lastFotoId = newestFotoId;
+        }
+        
+        setState(() {
+          _fotos = newFotos;
+          _isLoadingFotos = false;
+        });
+      } else {
+        setState(() => _isLoadingFotos = false);
+        debugPrint('Error bucket: ${response.statusCode}');
+      }
+    } catch (e) {
+      setState(() => _isLoadingFotos = false);
+      debugPrint('Error al obtener fotos: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // ENVÍO DE COMANDOS (POST) - Dispensa comida
   // ---------------------------------------------------------------------------
   Future<void> _sendCommand(String accion) async {
     setState(() {
@@ -181,21 +445,25 @@ class _DashboardScreenState extends State<DashboardScreen>
     });
 
     try {
+      // Enviar comando al ESP32 (el ESP32 maneja el tiempo de apertura)
       final response = await http
           .post(
             Uri.parse(ThingerConfig.writeUrl),
             headers: ThingerConfig.headers,
-            body: json.encode({'in': {'accion': accion}}),
+            body: json.encode({'in': accion}),
           )
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 10)); // Timeout más largo
 
       if (response.statusCode == 200) {
-        _showSnackBar('Comando enviado: $accion', Colors.green);
+        _showSnackBar('✓ Comida dispensada para $accion', Colors.green);
+        // Notificación de comida dispensada
+        NotificationService.notifyComidaDispensada(accion);
       } else {
-        _showSnackBar('Error al enviar comando', Colors.red);
+        _showSnackBar('Error: ${response.statusCode}', Colors.red);
       }
     } catch (e) {
-      _showSnackBar('Error de conexión', Colors.red);
+      // Si hay timeout pero el motor se movió, mostrar éxito parcial
+      _showSnackBar('Comando enviado (verificar motor)', Colors.orange);
       debugPrint('Error al enviar comando: $e');
     } finally {
       setState(() {
@@ -264,6 +532,12 @@ class _DashboardScreenState extends State<DashboardScreen>
               _buildLightCard(),
               const SizedBox(height: 24),
 
+              // Galería de Fotos del Bucket
+              _buildSectionTitle('Galería de Detecciones'),
+              const SizedBox(height: 12),
+              _buildPhotoGallery(),
+              const SizedBox(height: 24),
+
               // Botones de Control Manual
               _buildSectionTitle('Control Manual'),
               const SizedBox(height: 12),
@@ -277,17 +551,163 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   // ---------------------------------------------------------------------------
+  // VISOR DE CÁMARA IoT
+  // ---------------------------------------------------------------------------
+  Widget _buildCameraView() {
+    return Card(
+      elevation: 4,
+      shadowColor: Colors.indigo.withOpacity(0.2),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header de la tarjeta
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.indigo.shade50,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.videocam, color: Colors.indigo.shade600, size: 24),
+                const SizedBox(width: 10),
+                Text(
+                  'Cámara en Vivo',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.indigo.shade700,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade600,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'LIVE',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Contenedor de la imagen
+          ClipRRect(
+            borderRadius: const BorderRadius.only(
+              bottomLeft: Radius.circular(16),
+              bottomRight: Radius.circular(16),
+            ),
+            child: SizedBox(
+              height: 250,
+              child: Image.network(
+                ThingerConfig.cameraUrl(_cameraTimestamp),
+                headers: ThingerConfig.cameraHeaders,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Container(
+                    color: Colors.grey.shade100,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(
+                            value: loadingProgress.expectedTotalBytes != null
+                                ? loadingProgress.cumulativeBytesLoaded /
+                                      loadingProgress.expectedTotalBytes!
+                                : null,
+                            color: Colors.indigo,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Cargando imagen...',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    color: Colors.grey.shade100,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.videocam_off,
+                            size: 60,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Cámara no disponible',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Verifica la conexión del dispositivo',
+                            style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // APP BAR
   // ---------------------------------------------------------------------------
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
       title: Row(
         children: [
-          const Icon(
-            Icons.pets,
-            color: Colors.white,
-            size: 28,
-          ),
+          const Icon(Icons.pets, color: Colors.white, size: 28),
           const SizedBox(width: 10),
           const Text(
             'Smart Feeder',
@@ -345,21 +765,13 @@ class _DashboardScreenState extends State<DashboardScreen>
       statusText = 'DISPENSANDO...';
       animatedIcon = RotationTransition(
         turns: _gearAnimationController,
-        child: Icon(
-          Icons.settings,
-          size: 60,
-          color: Colors.amber.shade700,
-        ),
+        child: Icon(Icons.settings, size: 60, color: Colors.amber.shade700),
       );
     } else if (_sensorData.mascotaDetectada) {
       cardColor = Colors.teal.shade600;
       iconBgColor = Colors.teal.shade50;
       statusText = 'MASCOTA DETECTADA';
-      animatedIcon = Icon(
-        Icons.pets,
-        size: 60,
-        color: Colors.teal.shade600,
-      );
+      animatedIcon = Icon(Icons.pets, size: 60, color: Colors.teal.shade600);
     } else {
       cardColor = Colors.blueGrey;
       iconBgColor = Colors.blueGrey.shade50;
@@ -374,24 +786,16 @@ class _DashboardScreenState extends State<DashboardScreen>
     return Card(
       elevation: 6,
       shadowColor: cardColor.withOpacity(0.3),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Colors.white,
-              cardColor.withOpacity(0.08),
-            ],
+            colors: [Colors.white, cardColor.withOpacity(0.08)],
           ),
-          border: Border.all(
-            color: cardColor.withOpacity(0.3),
-            width: 1.5,
-          ),
+          border: Border.all(color: cardColor.withOpacity(0.3), width: 1.5),
         ),
         padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
         child: Column(
@@ -424,10 +828,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             const SizedBox(height: 8),
             Text(
               'Estado del Sistema',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
             ),
           ],
         ),
@@ -460,7 +861,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   ) {
     final bool isAlert = humidity > 70;
     final Color cardColor = isAlert ? Colors.red.shade400 : accentColor;
-    final Color bgColor = isAlert ? Colors.red.shade50 : accentColor.withOpacity(0.08);
+    final Color bgColor = isAlert
+        ? Colors.red.shade50
+        : accentColor.withOpacity(0.08);
 
     return Card(
       elevation: 4,
@@ -478,10 +881,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              bgColor,
-              Colors.white,
-            ],
+            colors: [bgColor, Colors.white],
           ),
         ),
         padding: const EdgeInsets.all(16),
@@ -510,7 +910,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.warning_amber_rounded, color: Colors.red.shade600, size: 14),
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          color: Colors.red.shade600,
+                          size: 14,
+                        ),
                         const SizedBox(width: 4),
                         Text(
                           'ALERTA',
@@ -537,10 +941,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             const SizedBox(height: 4),
             Text(
               'Humedad $label',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
             ),
             const SizedBox(height: 8),
             // Barra de progreso
@@ -575,26 +976,25 @@ class _DashboardScreenState extends State<DashboardScreen>
   // ---------------------------------------------------------------------------
   Widget _buildLightCard() {
     final bool isLowLight = _sensorData.nivelLuz < 300;
-    final IconData lightIcon = isLowLight ? Icons.nightlight_round : Icons.wb_sunny;
+    final IconData lightIcon = isLowLight
+        ? Icons.nightlight_round
+        : Icons.wb_sunny;
     final Color lightColor = isLowLight ? Colors.indigo : Colors.amber.shade700;
-    final Color bgColor = isLowLight ? Colors.indigo.shade50 : Colors.amber.shade50;
+    final Color bgColor = isLowLight
+        ? Colors.indigo.shade50
+        : Colors.amber.shade50;
 
     return Card(
       elevation: 4,
       shadowColor: lightColor.withOpacity(0.2),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           gradient: LinearGradient(
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
-            colors: [
-              bgColor,
-              Colors.white,
-            ],
+            colors: [bgColor, Colors.white],
           ),
         ),
         padding: const EdgeInsets.all(20),
@@ -613,11 +1013,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                 ],
               ),
-              child: Icon(
-                lightIcon,
-                size: 40,
-                color: lightColor,
-              ),
+              child: Icon(lightIcon, size: 40, color: lightColor),
             ),
             const SizedBox(width: 20),
             Expanded(
@@ -635,10 +1031,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   const SizedBox(height: 4),
                   Text(
                     'Nivel de Luz',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade600,
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                   ),
                 ],
               ),
@@ -652,9 +1045,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 decoration: BoxDecoration(
                   color: Colors.indigo.shade50,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.indigo.shade200,
-                  ),
+                  border: Border.all(color: Colors.indigo.shade200),
                 ),
                 child: Column(
                   children: [
@@ -675,6 +1066,299 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ],
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // GALERÍA DE FOTOS DEL BUCKET
+  // ---------------------------------------------------------------------------
+  Widget _buildPhotoGallery() {
+    if (_isLoadingFotos) {
+      return Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          height: 200,
+          child: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(color: Colors.indigo),
+                SizedBox(height: 12),
+                Text('Cargando fotos...'),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_fotos.isEmpty) {
+      return Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          height: 150,
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.photo_library_outlined,
+                  size: 50,
+                  color: Colors.grey.shade400,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'No hay fotos disponibles',
+                  style: TextStyle(color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: _fetchFotos,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Actualizar'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      elevation: 4,
+      shadowColor: Colors.indigo.withOpacity(0.2),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.teal.shade50,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.photo_library,
+                  color: Colors.teal.shade600,
+                  size: 24,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Fotos Detectadas (${_fotos.length})',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.teal.shade700,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: _fetchFotos,
+                  icon: Icon(Icons.refresh, color: Colors.teal.shade600),
+                  tooltip: 'Actualizar fotos',
+                ),
+              ],
+            ),
+          ),
+          // Lista horizontal de fotos
+          SizedBox(
+            height: 220,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.all(12),
+              itemCount: _fotos.length,
+              itemBuilder: (context, index) {
+                final foto = _fotos[index];
+                return _buildPhotoCard(foto);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPhotoCard(FotoMascota foto) {
+    // Decodificar imagen Base64
+    Widget imageWidget;
+    
+    // Debug: verificar contenido de la imagen
+    debugPrint('=== FOTO DEBUG ===');
+    debugPrint('Animal: ${foto.animal}');
+    debugPrint('Confianza: ${foto.confianza}');
+    debugPrint('Imagen length: ${foto.imagenBase64.length}');
+    debugPrint('Imagen preview: ${foto.imagenBase64.length > 50 ? foto.imagenBase64.substring(0, 50) : foto.imagenBase64}...');
+    
+    try {
+      if (foto.imagenBase64.isEmpty) {
+        throw Exception('Imagen vacía');
+      }
+      
+      // Limpiar el Base64 (remover posibles prefijos de data URI)
+      String cleanBase64 = foto.imagenBase64;
+      if (cleanBase64.contains(',')) {
+        cleanBase64 = cleanBase64.split(',').last;
+      }
+      
+      final bytes = base64Decode(cleanBase64);
+      imageWidget = Image.memory(
+        bytes,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint('Error al mostrar imagen: $error');
+          return Container(
+            color: Colors.grey.shade200,
+            child: Icon(
+              Icons.broken_image,
+              size: 50,
+              color: Colors.grey.shade400,
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      imageWidget = Container(
+        color: Colors.grey.shade200,
+        child: Icon(Icons.broken_image, size: 50, color: Colors.grey.shade400),
+      );
+    }
+
+    // Color según el animal detectado
+    Color animalColor;
+    IconData animalIcon;
+    switch (foto.animal.toLowerCase()) {
+      case 'perro':
+        animalColor = Colors.blue;
+        animalIcon = Icons.pets;
+        break;
+      case 'gato':
+        animalColor = Colors.orange;
+        animalIcon = Icons.emoji_nature;
+        break;
+      default:
+        animalColor = Colors.grey;
+        animalIcon = Icons.help_outline;
+    }
+
+    return GestureDetector(
+      onTap: () => _showPhotoDialog(foto, imageWidget),
+      child: Container(
+        width: 160,
+        margin: const EdgeInsets.only(right: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Imagen
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+              child: SizedBox(height: 120, child: imageWidget),
+            ),
+            // Info
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(animalIcon, size: 16, color: animalColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        foto.animal.toUpperCase(),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: animalColor,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${foto.fecha.day}/${foto.fecha.month}/${foto.fecha.year}',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  ),
+                  Text(
+                    '${foto.fecha.hour.toString().padLeft(2, '0')}:${foto.fecha.minute.toString().padLeft(2, '0')}',
+                    style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPhotoDialog(FotoMascota foto, Widget imageWidget) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+              child: AspectRatio(aspectRatio: 4 / 3, child: imageWidget),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Text(
+                    'Animal: ${foto.animal.toUpperCase()}',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Confianza: ${foto.confianza}%',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Fecha: ${foto.fecha.day}/${foto.fecha.month}/${foto.fecha.year} ${foto.fecha.hour.toString().padLeft(2, '0')}:${foto.fecha.minute.toString().padLeft(2, '0')}',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cerrar'),
+            ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
