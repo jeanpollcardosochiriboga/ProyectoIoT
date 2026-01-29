@@ -31,9 +31,9 @@ class NotificationService {
     String? payload,
   }) async {
     const androidDetails = AndroidNotificationDetails(
-      'smart_feeder_channel',
-      'Smart Feeder Alertas',
-      channelDescription: 'Notificaciones del dispensador inteligente',
+      'dispensador_channel',
+      'Dispensador Alertas',
+      channelDescription: 'Notificaciones del dispensador de comida para mascotas',
       importance: Importance.high,
       priority: Priority.high,
       icon: '@mipmap/ic_launcher',
@@ -83,7 +83,7 @@ class NotificationService {
 }
 
 // ============================================================================
-// CONFIGURACIÓN THINGER.IO - LLENAR CON TUS CREDENCIALES
+// CONFIGURACIÓN THINGER.IO -
 // ============================================================================
 class ThingerConfig {
   static const String THINGER_USER = 'jeanpoll';
@@ -183,7 +183,7 @@ class FotoMascota {
   });
 
   factory FotoMascota.fromJson(Map<String, dynamic> json) {
-    // El bucket puede devolver los datos directamente o dentro de 'val'
+    
     final data = json['val'] ?? json;
     
     return FotoMascota(
@@ -210,7 +210,7 @@ class SmartFeederApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Smart Feeder',
+      title: 'Dispensador de Comida - Jean Cardoso, Santiago Pila, Solange Ramos',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.light().copyWith(
         useMaterial3: true,
@@ -353,11 +353,12 @@ class _DashboardScreenState extends State<DashboardScreen>
       _notifiedPocaLuz = false;  // Resetear cuando hay luz
     }
 
-    // Alerta de humedad alta
-    if (newData.alertaHumedad && !_notifiedHumedad) {
+    // Alerta de humedad alta (80% o más en cualquier dispensador)
+    bool humedadAlta = newData.humedadPerro >= 80 || newData.humedadGato >= 80;
+    if (humedadAlta && !_notifiedHumedad) {
       NotificationService.notifyAlertaHumedad();
       _notifiedHumedad = true;
-    } else if (!newData.alertaHumedad) {
+    } else if (!humedadAlta) {
       _notifiedHumedad = false;  // Resetear cuando baja la humedad
     }
 
@@ -445,24 +446,26 @@ class _DashboardScreenState extends State<DashboardScreen>
     });
 
     try {
-      // Enviar comando al ESP32 (el ESP32 maneja el tiempo de apertura)
+      // Enviar comando al ESP32 via Thinger.io
+      // NOTA: El ESP32 tarda ~5 segundos en completar (apertura + dosificación + cierre)
+      // Usamos timeout corto porque Thinger responde rápido, el ESP32 procesa después
       final response = await http
           .post(
             Uri.parse(ThingerConfig.writeUrl),
             headers: ThingerConfig.headers,
             body: json.encode({'in': accion}),
           )
-          .timeout(const Duration(seconds: 10)); // Timeout más largo
+          .timeout(const Duration(seconds: 5)); // Thinger responde rápido
 
       if (response.statusCode == 200) {
-        _showSnackBar('✓ Comida dispensada para $accion', Colors.green);
+        _showSnackBar('🍽️ Dispensando $accion... (espera ~5s)', Colors.green);
         // Notificación de comida dispensada
         NotificationService.notifyComidaDispensada(accion);
       } else {
         _showSnackBar('Error: ${response.statusCode}', Colors.red);
       }
     } catch (e) {
-      // Si hay timeout pero el motor se movió, mostrar éxito parcial
+      // Timeout de Thinger (raro) - el motor puede estar funcionando igual
       _showSnackBar('Comando enviado (verificar motor)', Colors.orange);
       debugPrint('Error al enviar comando: $e');
     } finally {
@@ -705,20 +708,34 @@ class _DashboardScreenState extends State<DashboardScreen>
   // ---------------------------------------------------------------------------
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      title: Row(
+      title: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.pets, color: Colors.white, size: 28),
-          const SizedBox(width: 10),
-          const Text(
-            'Smart Feeder',
+          Row(
+            children: [
+              Icon(Icons.pets, color: Colors.white, size: 24),
+              SizedBox(width: 8),
+              Text(
+                'Dispensador de Comida',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+          Text(
+            'Jean Cardoso, Santiago Pila, Solange Ramos',
             style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 22,
-              color: Colors.white,
+              fontSize: 10,
+              color: Colors.white70,
+              fontWeight: FontWeight.normal,
             ),
           ),
         ],
       ),
+      toolbarHeight: 65,
       actions: [
         Container(
           margin: const EdgeInsets.only(right: 16),
